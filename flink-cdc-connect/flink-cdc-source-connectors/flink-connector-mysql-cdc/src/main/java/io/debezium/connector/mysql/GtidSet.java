@@ -30,6 +30,10 @@ import io.debezium.annotation.Immutable;
  * A set of MySQL GTIDs. This is an improvement of {@link com.github.shyiko.mysql.binlog.GtidSet} that is immutable,
  * and more properly supports comparisons.
  *
+ * <p>Supports MySQL 8.4+ tagged GTIDs ({@code uuid:tag:interval}). A tagged range is kept as a separate
+ * entry keyed by {@code uuid:tag}, mirroring MySQL's semantics where each (uuid, tag) pair is an
+ * independent transaction sequence.
+ *
  * @author Randall Hauch
  */
 @Immutable
@@ -48,15 +52,20 @@ public final class GtidSet {
     public GtidSet(String gtids) {
         gtids = gtids.replaceAll("\n", "").replaceAll("\r", "");
         new com.github.shyiko.mysql.binlog.GtidSet(gtids).getUUIDSets().forEach(uuidSet -> {
-            uuidSetsByServerId.put(uuidSet.getUUID(), new UUIDSet(uuidSet));
+            uuidSetsByServerId.put(serverKey(uuidSet), new UUIDSet(uuidSet));
         });
-        StringBuilder sb = new StringBuilder();
-        uuidSetsByServerId.values().forEach(uuidSet -> {
-            if (sb.length() != 0) {
-                sb.append(',');
-            }
-            sb.append(uuidSet.toString());
-        });
+    }
+
+    /**
+     * Build the map key for a server's GTID range. For untagged GTIDs this is the plain server UUID;
+     * for MySQL 8.4+ tagged GTIDs it is {@code uuid:tag} so that tagged and untagged ranges of the
+     * same server do not overwrite each other.
+     */
+    private static String serverKey(com.github.shyiko.mysql.binlog.GtidSet.UUIDSet uuidSet) {
+        String tag = uuidSet.getTag();
+        return (tag == null || tag.isEmpty())
+                ? uuidSet.getUUID()
+                : uuidSet.getUUID() + ":" + tag;
     }
 
     /**
@@ -89,7 +98,7 @@ public final class GtidSet {
     /**
      * Find the {@link UUIDSet} for the server with the specified Uuid.
      *
-     * @param uuid the Uuid of the server
+     * @param uuid the Uuid of the server (for tagged GTID ranges, {@code uuid:tag})
      * @return the {@link UUIDSet} for the identified server, or {@code null} if there are no GTIDs from that server.
      */
     public UUIDSet forServerWithId(String uuid) {
@@ -149,13 +158,17 @@ public final class GtidSet {
     }
 
     public boolean contains(String gtid) {
-        String[] split = GTID_DELIMITER.split(gtid);
-        String sourceId = split[0];
+        int lastDelimiter = gtid.lastIndexOf(':');
+        if (lastDelimiter < 0) {
+            return false;
+        }
+        // Everything before the last ':' identifies the source: plain "uuid" or tagged "uuid:tag".
+        String sourceId = gtid.substring(0, lastDelimiter);
         UUIDSet uuidSet = forServerWithId(sourceId);
         if (uuidSet == null) {
             return false;
         }
-        long transactionId = Long.parseLong(split[1]);
+        long transactionId = Long.parseLong(gtid.substring(lastDelimiter + 1));
         return uuidSet.contains(transactionId);
     }
 
@@ -203,11 +216,17 @@ public final class GtidSet {
     @Immutable
     public static class UUIDSet {
 
+        /**
+         * The source identifier: the server UUID, or {@code uuid:tag} for MySQL 8.4+ tagged GTID ranges.
+         */
         private final String uuid;
         private final LinkedList<Interval> intervals = new LinkedList<>();
 
         protected UUIDSet(com.github.shyiko.mysql.binlog.GtidSet.UUIDSet uuidSet) {
-            this.uuid = uuidSet.getUUID();
+            String tag = uuidSet.getTag();
+            this.uuid = (tag == null || tag.isEmpty())
+                    ? uuidSet.getUUID()
+                    : uuidSet.getUUID() + ":" + tag;
             uuidSet.getIntervals().forEach(interval -> {
                 intervals.add(new Interval(interval.getStart(), interval.getEnd()));
             });
@@ -243,7 +262,7 @@ public final class GtidSet {
         /**
          * Get the Uuid for the server that generated the GTIDs.
          *
-         * @return the server's Uuid; never null
+         * @return the server's Uuid, or {@code uuid:tag} for tagged ranges; never null
          */
         public String getUUID() {
             return uuid;
