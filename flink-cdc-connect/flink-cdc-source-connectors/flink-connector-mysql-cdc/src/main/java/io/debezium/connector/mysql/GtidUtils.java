@@ -139,9 +139,7 @@ public class GtidUtils {
                 }
 
                 GtidSet.UUIDSet mergedUuidSet =
-                        new GtidSet.UUIDSet(
-                                new com.github.shyiko.mysql.binlog.GtidSet.UUIDSet(
-                                        restoredUuidSet.getUUID(), merged));
+                        new GtidSet.UUIDSet(newServerUuidSet(restoredUuidSet.getUUID(), merged));
 
                 newSet.put(restoredUuidSet.getUUID(), mergedUuidSet);
             } else {
@@ -149,6 +147,23 @@ public class GtidUtils {
             }
         }
         return new GtidSet(newSet);
+    }
+
+    /**
+     * Builds a client-side {@link com.github.shyiko.mysql.binlog.GtidSet.UUIDSet} from a server
+     * key. For untagged GTIDs the key is the plain server UUID; for MySQL 8.4+ tagged GTIDs the key
+     * is {@code uuid:tag}, in which case the tag-aware constructor is used (a raw {@code uuid:tag}
+     * string would fail {@link java.util.UUID#fromString}).
+     */
+    private static com.github.shyiko.mysql.binlog.GtidSet.UUIDSet newServerUuidSet(
+            String serverKey, List<com.github.shyiko.mysql.binlog.GtidSet.Interval> intervals) {
+        int colon = serverKey.indexOf(':');
+        if (colon < 0) {
+            return new com.github.shyiko.mysql.binlog.GtidSet.UUIDSet(serverKey, intervals);
+        }
+        String uuid = serverKey.substring(0, colon);
+        String tag = serverKey.substring(colon + 1);
+        return new com.github.shyiko.mysql.binlog.GtidSet.UUIDSet(uuid, tag, intervals);
     }
 
     private static long getMinIntervalStart(List<GtidSet.Interval> intervals) {
