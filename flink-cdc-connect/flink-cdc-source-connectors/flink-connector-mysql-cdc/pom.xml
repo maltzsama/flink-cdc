@@ -52,6 +52,22 @@ limitations under the License.
             <groupId>io.debezium</groupId>
             <artifactId>debezium-connector-mysql</artifactId>
             <version>${debezium.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.zendesk</groupId>
+                    <artifactId>mysql-binlog-connector-java</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.debezium</groupId>
+                    <artifactId>mysql-binlog-connector-java</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>io.debezium</groupId>
+            <artifactId>mysql-binlog-connector-java</artifactId>
+            <version>0.41.0</version>
         </dependency>
 
         <dependency>

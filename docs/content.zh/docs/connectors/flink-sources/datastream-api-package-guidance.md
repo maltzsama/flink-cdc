@@ -185,7 +185,7 @@ This guide provides a simple `pom.xml` example for packaging DataStream job JARs
                                     <include>org.antlr:antlr4-runtime</include>
                                     <include>org.apache.kafka:*</include>
                                     <include>mysql:mysql-connector-java</include>
-                                    <include>com.zendesk:mysql-binlog-connector-java</include>
+                                    <include>io.debezium:mysql-binlog-connector-java</include>
                                     <include>com.fasterxml.*:*</include>
                                     <include>com.google.guava:*</include>
                                     <include>com.esri.geometry:esri-geometry-api</include>
@@ -389,7 +389,7 @@ This guide provides a simple `pom.xml` example for packaging DataStream job JARs
                                     <include>org.antlr:antlr4-runtime</include>
                                     <include>org.apache.kafka:*</include>
                                     <include>mysql:mysql-connector-java</include>
-                                    <include>com.zendesk:mysql-binlog-connector-java</include>
+                                    <include>io.debezium:mysql-binlog-connector-java</include>
                                     <include>com.fasterxml.*:*</include>
                                     <include>com.google.guava:*</include>
                                     <include>com.esri.geometry:esri-geometry-api</include>
