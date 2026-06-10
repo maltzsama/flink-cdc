@@ -5,6 +5,12 @@
  */
 package io.debezium.connector.mysql;
 
+import com.google.common.collect.BoundType;
+import com.google.common.collect.Range;
+import com.google.common.collect.RangeSet;
+import com.google.common.collect.TreeRangeSet;
+import io.debezium.annotation.Immutable;
+
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -19,20 +25,13 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.BoundType;
-import com.google.common.collect.Range;
-import com.google.common.collect.RangeSet;
-import com.google.common.collect.TreeRangeSet;
-
-import io.debezium.annotation.Immutable;
-
 /**
- * A set of MySQL GTIDs. This is an improvement of {@link com.github.shyiko.mysql.binlog.GtidSet} that is immutable,
- * and more properly supports comparisons.
+ * A set of MySQL GTIDs. This is an improvement of {@link com.github.shyiko.mysql.binlog.GtidSet}
+ * that is immutable, and more properly supports comparisons.
  *
- * <p>Supports MySQL 8.4+ tagged GTIDs ({@code uuid:tag:interval}). A tagged range is kept as a separate
- * entry keyed by {@code uuid:tag}, mirroring MySQL's semantics where each (uuid, tag) pair is an
- * independent transaction sequence.
+ * <p>Supports MySQL 8.4+ tagged GTIDs ({@code uuid:tag:interval}). A tagged range is kept as a
+ * separate entry keyed by {@code uuid:tag}, mirroring MySQL's semantics where each (uuid, tag) pair
+ * is an independent transaction sequence.
  *
  * @author Randall Hauch
  */
@@ -51,26 +50,27 @@ public final class GtidSet {
      */
     public GtidSet(String gtids) {
         gtids = gtids.replaceAll("\n", "").replaceAll("\r", "");
-        new com.github.shyiko.mysql.binlog.GtidSet(gtids).getUUIDSets().forEach(uuidSet -> {
-            uuidSetsByServerId.put(serverKey(uuidSet), new UUIDSet(uuidSet));
-        });
+        new com.github.shyiko.mysql.binlog.GtidSet(gtids)
+                .getUUIDSets()
+                .forEach(
+                        uuidSet -> {
+                            uuidSetsByServerId.put(serverKey(uuidSet), new UUIDSet(uuidSet));
+                        });
     }
 
     /**
-     * Build the map key for a server's GTID range. For untagged GTIDs this is the plain server UUID;
-     * for MySQL 8.4+ tagged GTIDs it is {@code uuid:tag} so that tagged and untagged ranges of the
-     * same server do not overwrite each other.
+     * Build the map key for a server's GTID range. For untagged GTIDs this is the plain server
+     * UUID; for MySQL 8.4+ tagged GTIDs it is {@code uuid:tag} so that tagged and untagged ranges
+     * of the same server do not overwrite each other.
      */
     private static String serverKey(com.github.shyiko.mysql.binlog.GtidSet.UUIDSet uuidSet) {
         String tag = uuidSet.getTag();
-        return (tag == null || tag.isEmpty())
-                ? uuidSet.getUUID()
-                : uuidSet.getUUID() + ":" + tag;
+        return (tag == null || tag.isEmpty()) ? uuidSet.getUUID() : uuidSet.getUUID() + ":" + tag;
     }
 
     /**
-     * Obtain a copy of this {@link GtidSet} except with only the GTID ranges that have server UUIDs that match the given
-     * predicate.
+     * Obtain a copy of this {@link GtidSet} except with only the GTID ranges that have server UUIDs
+     * that match the given predicate.
      *
      * @param sourceFilter the predicate that returns whether a server UUID is to be included
      * @return the new GtidSet, or this object if {@code sourceFilter} is null; never null
@@ -79,10 +79,10 @@ public final class GtidSet {
         if (sourceFilter == null) {
             return this;
         }
-        Map<String, UUIDSet> newSets = this.uuidSetsByServerId.entrySet()
-                .stream()
-                .filter(entry -> sourceFilter.test(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, UUIDSet> newSets =
+                this.uuidSetsByServerId.entrySet().stream()
+                        .filter(entry -> sourceFilter.test(entry.getKey()))
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         return new GtidSet(newSets);
     }
 
@@ -99,18 +99,20 @@ public final class GtidSet {
      * Find the {@link UUIDSet} for the server with the specified Uuid.
      *
      * @param uuid the Uuid of the server (for tagged GTID ranges, {@code uuid:tag})
-     * @return the {@link UUIDSet} for the identified server, or {@code null} if there are no GTIDs from that server.
+     * @return the {@link UUIDSet} for the identified server, or {@code null} if there are no GTIDs
+     *     from that server.
      */
     public UUIDSet forServerWithId(String uuid) {
         return uuidSetsByServerId.get(uuid);
     }
 
     /**
-     * Determine if the GTIDs represented by this object are contained completely within the supplied set of GTIDs.
+     * Determine if the GTIDs represented by this object are contained completely within the
+     * supplied set of GTIDs.
      *
      * @param other the other set of GTIDs; may be null
-     * @return {@code true} if all of the GTIDs in this set are completely contained within the supplied set of GTIDs, or
-     *         {@code false} otherwise
+     * @return {@code true} if all of the GTIDs in this set are completely contained within the
+     *     supplied set of GTIDs, or {@code false} otherwise
      */
     public boolean isContainedWithin(GtidSet other) {
         if (other == null) {
@@ -129,8 +131,11 @@ public final class GtidSet {
     }
 
     /**
-     * Obtain a copy of this {@link GtidSet} except overwritten with all of the GTID ranges in the supplied {@link GtidSet}.
-     * @param other the other {@link GtidSet} with ranges to add/overwrite on top of those in this set;
+     * Obtain a copy of this {@link GtidSet} except overwritten with all of the GTID ranges in the
+     * supplied {@link GtidSet}.
+     *
+     * @param other the other {@link GtidSet} with ranges to add/overwrite on top of those in this
+     *     set;
      * @return the new GtidSet, or this object if {@code other} is null or empty; never null
      */
     public GtidSet with(GtidSet other) {
@@ -145,6 +150,7 @@ public final class GtidSet {
 
     /**
      * Returns a copy with all intervals set to beginning
+     *
      * @return
      */
     public GtidSet getGtidSetBeginning() {
@@ -176,11 +182,22 @@ public final class GtidSet {
         if (other == null) {
             return this;
         }
-        Map<String, UUIDSet> newSets = this.uuidSetsByServerId.entrySet()
-                .stream()
-                .filter(entry -> !entry.getValue().isContainedWithin(other.forServerWithId(entry.getKey())))
-                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue().subtract(other.forServerWithId(entry.getKey()))))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, UUIDSet> newSets =
+                this.uuidSetsByServerId.entrySet().stream()
+                        .filter(
+                                entry ->
+                                        !entry.getValue()
+                                                .isContainedWithin(
+                                                        other.forServerWithId(entry.getKey())))
+                        .map(
+                                entry ->
+                                        new AbstractMap.SimpleEntry<>(
+                                                entry.getKey(),
+                                                entry.getValue()
+                                                        .subtract(
+                                                                other.forServerWithId(
+                                                                        entry.getKey()))))
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         return new GtidSet(newSets);
     }
 
@@ -210,26 +227,29 @@ public final class GtidSet {
         return String.join(",", gtids);
     }
 
-    /**
-     * A range of GTIDs for a single server with a specific Uuid.
-     */
+    /** A range of GTIDs for a single server with a specific Uuid. */
     @Immutable
     public static class UUIDSet {
 
         /**
-         * The source identifier: the server UUID, or {@code uuid:tag} for MySQL 8.4+ tagged GTID ranges.
+         * The source identifier: the server UUID, or {@code uuid:tag} for MySQL 8.4+ tagged GTID
+         * ranges.
          */
         private final String uuid;
+
         private final LinkedList<Interval> intervals = new LinkedList<>();
 
         protected UUIDSet(com.github.shyiko.mysql.binlog.GtidSet.UUIDSet uuidSet) {
             String tag = uuidSet.getTag();
-            this.uuid = (tag == null || tag.isEmpty())
-                    ? uuidSet.getUUID()
-                    : uuidSet.getUUID() + ":" + tag;
-            uuidSet.getIntervals().forEach(interval -> {
-                intervals.add(new Interval(interval.getStart(), interval.getEnd()));
-            });
+            this.uuid =
+                    (tag == null || tag.isEmpty())
+                            ? uuidSet.getUUID()
+                            : uuidSet.getUUID() + ":" + tag;
+            uuidSet.getIntervals()
+                    .forEach(
+                            interval -> {
+                                intervals.add(new Interval(interval.getStart(), interval.getEnd()));
+                            });
             Collections.sort(this.intervals);
             if (this.intervals.size() > 1) {
                 // Collapse adjacent intervals ...
@@ -278,12 +298,12 @@ public final class GtidSet {
         }
 
         /**
-         * Determine if the set of transaction numbers from this server is completely within the set of transaction numbers from
-         * the set of transaction numbers in the supplied set.
+         * Determine if the set of transaction numbers from this server is completely within the set
+         * of transaction numbers from the set of transaction numbers in the supplied set.
          *
          * @param other the set to compare with this set
-         * @return {@code true} if this server's transaction numbers are a subset of the transaction numbers of the supplied set,
-         *         or false otherwise
+         * @return {@code true} if this server's transaction numbers are a subset of the transaction
+         *     numbers of the supplied set, or false otherwise
          */
         public boolean isContainedWithin(UUIDSet other) {
             if (other == null) {
@@ -339,7 +359,8 @@ public final class GtidSet {
             }
             if (obj instanceof UUIDSet) {
                 UUIDSet that = (UUIDSet) obj;
-                return this.getUUID().equalsIgnoreCase(that.getUUID()) && this.getIntervals().equals(that.getIntervals());
+                return this.getUUID().equalsIgnoreCase(that.getUUID())
+                        && this.getIntervals().equals(that.getIntervals());
             }
             return super.equals(obj);
         }
@@ -364,14 +385,21 @@ public final class GtidSet {
 
         public UUIDSet subtract(UUIDSet other) {
             if (!uuid.equals(other.getUUID())) {
-                throw new IllegalArgumentException("UUIDSet subtraction is supported only within a single server UUID");
+                throw new IllegalArgumentException(
+                        "UUIDSet subtraction is supported only within a single server UUID");
             }
             RangeSet<Long> rangeSet = TreeRangeSet.create();
-            intervals.forEach(interval -> rangeSet.add(Range.closed(interval.getStart(), interval.getEnd())));
-            other.getIntervals().forEach(interval -> rangeSet.remove(Range.closed(interval.getStart(), interval.getEnd())));
-            List<Interval> intervalList = rangeSet.asRanges().stream()
-                    .map(range -> new Interval(range))
-                    .collect(Collectors.toList());
+            intervals.forEach(
+                    interval -> rangeSet.add(Range.closed(interval.getStart(), interval.getEnd())));
+            other.getIntervals()
+                    .forEach(
+                            interval ->
+                                    rangeSet.remove(
+                                            Range.closed(interval.getStart(), interval.getEnd())));
+            List<Interval> intervalList =
+                    rangeSet.asRanges().stream()
+                            .map(range -> new Interval(range))
+                            .collect(Collectors.toList());
             return new UUIDSet(uuid, intervalList);
         }
     }
@@ -388,8 +416,14 @@ public final class GtidSet {
         }
 
         private Interval(Range<Long> range) {
-            this.start = range.lowerBoundType() == BoundType.CLOSED ? range.lowerEndpoint() : range.lowerEndpoint() + 1;
-            this.end = range.upperBoundType() == BoundType.CLOSED ? range.upperEndpoint() : range.upperEndpoint() - 1;
+            this.start =
+                    range.lowerBoundType() == BoundType.CLOSED
+                            ? range.lowerEndpoint()
+                            : range.lowerEndpoint() + 1;
+            this.end =
+                    range.upperBoundType() == BoundType.CLOSED
+                            ? range.upperEndpoint()
+                            : range.upperEndpoint() - 1;
             if (start > end) {
                 throw new IllegalArgumentException("Empty interval: " + range);
             }
@@ -417,9 +451,10 @@ public final class GtidSet {
          * Determine if this interval is completely within the supplied interval.
          *
          * @param other the interval to compare with
-         * @return {@code true} if the {@link #getStart() start} is greater than or equal to the supplied interval's
-         *         {@link #getStart() start} and the {@link #getEnd() end} is less than or equal to the supplied interval's
-         *         {@link #getEnd() end}, or {@code false} otherwise
+         * @return {@code true} if the {@link #getStart() start} is greater than or equal to the
+         *     supplied interval's {@link #getStart() start} and the {@link #getEnd() end} is less
+         *     than or equal to the supplied interval's {@link #getEnd() end}, or {@code false}
+         *     otherwise
          */
         public boolean isContainedWithin(Interval other) {
             if (other == this) {
