@@ -44,3 +44,5 @@ jobs:
             -Drevision=${{ steps.version.outputs.version }} \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }} \
             deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
