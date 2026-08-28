@@ -85,6 +85,21 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
     private volatile boolean currentTaskRunning;
     private volatile Throwable readException;
 
+    /**
+     * Set once the reading task submitted by {@link #submitSplit} has left its executor, whether it
+     * completed, threw, or was stopped. {@code pollWithBuffer} blocks until it sees a BINLOG_END
+     * watermark, and only the reading task can produce one; if that task goes away without emitting
+     * it, nothing else ever will. Without this flag the consumer waits on an empty queue forever —
+     * silently, with the job still reported as RUNNING — which is exactly the hang this guards
+     * against. {@code currentTaskRunning} cannot serve the same purpose: it is also flipped to
+     * false by {@code stopCurrentTask()} on paths where the task is still expected to emit
+     * BINLOG_END.
+     */
+    private volatile boolean readTaskTerminated;
+
+    /** Set by {@link #close()} so a torn-down reader is not mistaken for a stalled one. */
+    private volatile boolean closing;
+
     // task to read snapshot for current split
     private MySqlSnapshotSplitReadTask splitSnapshotReadTask;
     private MySqlSnapshotSplit currentSnapshotSplit;
@@ -136,6 +151,10 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
         this.nameAdjuster = statefulTaskContext.getSchemaNameAdjuster();
         this.hasNextElement.set(true);
         this.reachEnd.set(false);
+        // This reader instance is reused across splits, so clear the previous split's terminal
+        // marker before the new reading task starts.
+        this.readTaskTerminated = false;
+        this.closing = false;
         this.splitSnapshotReadTask =
                 new MySqlSnapshotSplitReadTask(
                         statefulTaskContext.getSourceConfig(),
@@ -167,6 +186,10 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
                         setReadException(e);
                     } finally {
                         stopCurrentTask();
+                        // Must be the last thing the task does: pollWithBuffer treats this as
+                        // "no further records can arrive", so setting it before the task is
+                        // really done would cut the split short.
+                        readTaskTerminated = true;
                     }
                 });
     }
@@ -319,9 +342,28 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
         SourceRecord highWatermark = null;
 
         Map<Struct, List<SourceRecord>> snapshotRecords = new HashMap<>();
+        // Guards the race between the reading task terminating and the events it already enqueued.
+        // Sampling the flag *before* polling means any event enqueued before termination is still
+        // observed afterwards: we only conclude the split is unfinishable once a poll that started
+        // after the task was already gone comes back empty.
+        boolean taskGoneBeforePoll = false;
         while (!reachBinlogEnd) {
             checkReadException();
+            boolean taskWasGone = taskGoneBeforePoll;
+            taskGoneBeforePoll = readTaskTerminated;
             List<DataChangeEvent> batch = queue.poll();
+            if (batch.isEmpty() && taskWasGone && !closing) {
+                // The reading task is gone and it left nothing behind, so the BINLOG_END that this
+                // loop waits for can never arrive. Fail loudly: before this check the loop simply
+                // span on an empty queue forever, leaving the split — and the whole job — silently
+                // stuck while still reporting RUNNING.
+                throw new FlinkRuntimeException(
+                        String.format(
+                                "The snapshot read task for split %s terminated without emitting a "
+                                        + "BINLOG_END watermark, so reading this split can never "
+                                        + "complete. Failing the split instead of blocking forever.",
+                                currentSnapshotSplit));
+            }
             for (DataChangeEvent event : batch) {
                 SourceRecord record = event.getRecord();
                 if (lowWatermark == null) {
@@ -415,6 +457,10 @@ public class SnapshotSplitReader implements DebeziumReader<SourceRecords, MySqlS
     @Override
     public void close() {
         try {
+            // Tells pollWithBuffer that a missing BINLOG_END is expected from here on: the reader
+            // is being torn down, so failing the split would report a normal shutdown as if the
+            // split had been left incomplete.
+            closing = true;
             stopCurrentTask();
             if (statefulTaskContext != null) {
                 statefulTaskContext.close();
