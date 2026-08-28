@@ -22,6 +22,8 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
           server-id: github
+          server-username: GITHUB_TOKEN
+          server-password: GITHUB_TOKEN
           settings-path: ${{ github.workspace }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
